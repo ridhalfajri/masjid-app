@@ -210,6 +210,11 @@
             padding: 20px 40px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
         }
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0.4; }
+            100% { opacity: 1; }
+        }
     </style>
 </head>
 <body>
@@ -261,7 +266,9 @@
         <div class="content-right">
             <div>
                 <div id="clock" class="clock">00:00:00</div>
+                <div id="countdown-adzan" style="font-size: 1.5rem; color: #ffcc00; text-align: right; font-weight: bold; min-height: 2rem; margin-top: -10px;"></div>
                 <div id="date" class="date-info">Memuat...</div>
+                <div id="hijri-date" class="date-info" style="color: var(--primary-green); font-weight: 600; font-size: 1.4rem;">Memuat Tanggal Hijriah...</div>
             </div>
 
             <div class="prayer-group">
@@ -321,6 +328,58 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://www.youtube.com/iframe_api"></script>
     <script>
+        async function fetchHijriDate() {
+            try {
+                const tgl = new Date().toLocaleDateString('en-GB').replace(/\//g, '-');
+                const res = await fetch(`https://api.aladhan.com/v1/gToH/${tgl}`);
+                const data = await res.json();
+                const h = data.data.hijri;
+
+                const day = h.day;
+                const month = h.month.en;
+                const year = h.year;
+
+                const hijriString = `${day} ${month} ${year} H`;
+                document.getElementById('hijri-date').innerText = hijriString;
+                
+            } catch (e) {
+                console.error("Gagal memuat tanggal Hijriah");
+            }
+        }
+        // Panggil di dalam DOMContentLoaded
+        fetchHijriDate();
+
+        function updateCountdownAdzan(now) {
+            const currentTime = now.getHours() * 60 + now.getMinutes();
+            const daftar = ['subuh', 'dzuhur', 'ashar', 'maghrib', 'isya'];
+            const countdownEl = document.getElementById('countdown-adzan');
+            let text = "";
+
+            daftar.forEach(id => {
+                const timeStr = document.getElementById(id).innerText;
+                if (timeStr === "--:--" || timeStr === "") return;
+
+                const [h, m] = timeStr.split(':').map(Number);
+                const prayerTime = h * 60 + m;
+                const selisih = prayerTime - currentTime;
+
+                // Jika waktu sholat antara 1 sampai 10 menit lagi
+                if (selisih > 0 && selisih <= 10) {
+                    text = `<i class="fa-solid fa-clock-rotate-left me-2"></i> ${selisih} Menit menuju ${id.toUpperCase()}`;
+                }
+            });
+
+            countdownEl.innerHTML = text;
+            
+            // Berikan efek berkedip jika ada teks
+            if (text !== "") {
+                countdownEl.style.animation = "blink 1s infinite";
+            } else {
+                countdownEl.style.animation = "none";
+            }
+        }
+    </script>
+    <script>
         const settings = @json($settings);
         const DURASI_VIDEO = 300000; 
         const DURASI_INFAQ = 60000;  
@@ -343,7 +402,8 @@
             // Format jam untuk tampilan di layar (HH:mm:ss)
             document.getElementById('clock').innerText = now.toLocaleTimeString('id-ID', { hour12: false });
             document.getElementById('date').innerText = now.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-            
+            updateCountdownAdzan(now);
+            highlightNextPrayer(now);
             // Format jam untuk pembanding jadwal (HH:mm) -> HARUS SAMA DENGAN FORMAT API
             const jamMenitSekarang = now.toLocaleTimeString('id-ID', { 
                 hour: '2-digit', 
@@ -366,13 +426,36 @@
         }
         setInterval(updateTime, 1000);
 
+        function highlightNextPrayer(now) {
+            const currentTime = now.getHours() * 60 + now.getMinutes();
+            const daftar = ['subuh', 'dzuhur', 'ashar', 'maghrib', 'isya'];
+            let nextFound = false;
+
+            daftar.forEach(id => {
+                const timeStr = document.getElementById(id).innerText;
+                if (timeStr === "--:--" || timeStr === "") return; // Abaikan jika data belum load
+
+                const parts = timeStr.split(':');
+                const prayerTime = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+
+                document.getElementById(`row-${id}`).classList.remove('active-sholat');
+
+                if (!nextFound && prayerTime > currentTime) {
+                    document.getElementById(`row-${id}`).classList.add('active-sholat');
+                    nextFound = true;
+                }
+            });
+
+            if (!nextFound) document.getElementById('row-subuh').classList.add('active-sholat');
+        }
+
         async function fetchJadwal() {
             const tgl = new Date().toISOString().slice(0, 10).replace(/-/g, '/');
             try {
                 const res = await fetch(`https://api.myquran.com/v2/sholat/jadwal/1301/${tgl}`);
                 const data = await res.json();
                 let j = data.data.jadwal;
-                // j.ashar = "12:26";
+                // j.ashar = "13:30";
                 // console.log(j);
                 ['subuh', 'dzuhur', 'ashar', 'maghrib', 'isya'].forEach(s => {
                     document.getElementById(s).innerText = j[s];
